@@ -161,3 +161,115 @@ Some comments:
 * Median Education: Both men and women show distinct troughs in activity in the early morning (250 mins~4 a.m.) and peaks in the afternoon (750 mins~12:30 p.m.). The peak will last until about (1125 mins~6:45 p.m.). After 6:45 p.m., both men and women keep decreasing until night.
 
 * High Education: The high education has the similar trend as the median education. However, women show a significant higher activity level than men during the peak time period.
+
+# Problem 3
+
+## Import, clean, and tidy these data, and describe the resulting dataset.
+
+```{r}
+library(tidyverse)
+
+jan_2020 <- read_csv("hw3data/Jan 2020 Citi.csv") |>
+  mutate(month = "jan", year = 2020) |>
+  janitor::clean_names()
+jan_2024 <- read_csv("hw3data/Jan 2024 Citi.csv") |>
+  mutate(month = "jan", year = 2024) |>
+  janitor::clean_names()
+jul_2020 <- read_csv("hw3data/July 2020 Citi.csv") |>
+  mutate(month = "jul", year = 2020) |>
+  janitor::clean_names()
+jul_2024 <- read_csv("hw3data/July 2024 Citi.csv") |>
+  mutate(month = "jul", year = 2024) |>
+  janitor::clean_names()
+
+combined_data <- bind_rows(jan_2020, jul_2020, jan_2024, jul_2024) |>
+  distinct()
+
+obs = nrow(combined_data)
+
+summary(combined_data)
+```
+
+Description: The cleaned Citi Bike data set contains `r obs` observations as well as information on rides taken during January and July of both 2020 and 2024. It includes data such as the ride ID, bike type, day of the week, ride duration, start and end station names, as well as whether the rider is a member or casual user. The data set has been cleaned by combining all four months, removing duplicates, and standardizing column names.
+
+## Produce a reader-friendly table
+
+```{r}
+rides_summary <- combined_data |>
+  group_by(year, month, member_casual) |>
+  summarize(total_rides = n()) |>
+  pivot_wider(names_from = member_casual, values_from = total_rides)
+
+print(knitr::kable(rides_summary))
+```
+
+Some comments: The summary table shows the total number of rides taken by casual riders and Citi Bike members across different years and months. From the table, it is evident that there is a general trend of higher ridership in July compared to January, which can be attributed to better weather conditions during summer months. Additionally, Citi Bike members consistently take more rides than casual riders across all time periods, highlighting the benefit of membership for frequent users. Notably, the number of casual riders has increased from 2020 to 2024.
+
+## Create a table showing the 5 most popular starting stations for July 2024
+
+```{r}
+popular_stations <- combined_data |>
+  filter(year == 2024, month == "jul") |>
+  group_by(start_station_name) |>
+  summarize(total_rides = n()) |>
+  arrange(desc(total_rides)) |>
+  slice_head(n = 5)
+
+print(knitr::kable(popular_stations))
+```
+
+## The effects of day of the week, month, and year on median ride duration
+
+```{r}
+median_ride_plot <- combined_data |>
+  group_by(year, month, weekdays) |>
+  summarize(median_ride = median(duration, na.rm = TRUE)) |>
+  ggplot(aes(x = weekdays, y = median_ride, color = interaction(year, month))) +
+  geom_line(aes(group = interaction(year, month))) +
+  facet_grid(year ~ month) +
+  labs(
+    title = "Median Ride Duration by Day of the Week, Month, and Year",
+    x = "Day of the Week",
+    y = "Median Ride Duration (minutes)",
+    color = "Year.Month"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "bottom")
+
+print(median_ride_plot)
+```
+
+Some comments:
+
+* In July (summer), median ride duration is generally longer compared to January (winter).
+
+* Comparing 2024, 2022 has the noticeable higher median ride duration.
+
+* Ride duration tends to be longer on weekends.
+
+```{r}
+ride_distribution_plot <- combined_data |>
+  filter(year == 2024) |>
+  ggplot(aes(x = duration, fill = member_casual)) +
+  geom_histogram(binwidth = 10, position = "dodge", alpha = 0.6) +
+  facet_grid(month ~ rideable_type) +
+  labs(
+    title = "Ride Duration Distribution by Month, Membership Status, and Bike Type (2024)",
+    x = "Ride Duration (minutes)",
+    y = "Count",
+    color = "Member/Casual"
+  ) +
+  theme_minimal()  +
+  theme(legend.position = "bottom") 
+
+print(ride_distribution_plot)
+```
+
+Some comments:
+
+* Casual riders appear to have a wider spread in ride duration compared to members, indicating more variability in their ride habits.
+
+* July shows significantly more rides compared to January, which may indicate the influence of warmer weather encouraging more riding activity. 
+
+* Electric bikes generally show a slightly higher concentration of shorter rides compared to classic bikes.
