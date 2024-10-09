@@ -4,3 +4,160 @@ author: "Chenyu Jin"
 date: "2024-10-08"
 output: github_document
 ---
+
+# Problem 2
+
+## Imort data sets
+
+```{r}
+library(tidyverse)
+
+nhanes_accel <- read_csv("hw3data/nhanes_accel.csv") |>
+  janitor::clean_names()
+nhanes_covar <- read_csv("hw3data/nhanes_covar.csv", skip = 4)
+colnames(nhanes_covar) <- c("seqn", "sex", "age", "bmi", "education")
+```
+
+## Encode data with reasonable variable classes; Filter out participants less than 21 years of age and those with missing demographic data in `nhanes_covar`data set
+
+Here we assume for `sex`, "1" is Male and "2" is female;
+And we assume for `education`, "1" is low, "2" is median and "3" is high
+
+```{r}
+nhanes_covar <- nhanes_covar |>
+  mutate(
+    seqn = as.integer(seqn),
+    sex = factor(sex, levels = c(1, 2), labels = c("Male", "Female")),
+    age = as.numeric(age),
+    bmi = as.numeric(bmi),
+    education = factor(education, levels = c(1, 2, 3), 
+                       labels = c("low education", 
+                                  "median education", 
+                                  "high education"))
+  ) |>
+  filter(age >= 21) |>
+  drop_na()
+```
+
+## Merge the two data sets
+
+```{r}
+merged_data <- nhanes_accel |>
+  inner_join(nhanes_covar, by = "seqn")
+```
+
+## Produce a reader-friendly table for the number of men and women in each education category
+
+```{r}
+education <- merged_data |>
+  group_by(education, sex) |>
+  summarize(count = n()) |>
+  pivot_wider(names_from = sex, values_from = count)
+
+print(knitr::kable(education))
+```
+
+## Create a visualization of the age distributions for men and women in each education category
+
+```{r}
+age_dist_plot <- merged_data |>
+  ggplot(aes(x = age, fill = sex)) +
+  geom_histogram(binwidth = 5, position = "dodge", alpha = 0.7) +
+  facet_grid(.~ education) +
+  labs(
+    title = "Age Distributions for Men and Women by Education Category",
+    x = "Age for men and women",
+    y = "Count for men and women",
+    color = "Sex"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+print(age_dist_plot)
+```
+
+Some comments:
+
+* For the reader_friendly table:
+
+   * There is a roughly equal distribution between men and women for the "low education" group.
+
+   * For "median education," there are more men than women.
+
+   * In the "high education" group, the numbers of men and women are almost the same, with a slight excess of females.
+
+* For the plot:
+
+  * Low Education: There is a relatively even distribution across age ranges for both men and women, with a slight concentration in older ages (60+).
+
+  * Median Education: The number of participants is lower, with men being slightly more represented, and the age range is spread quite evenly.
+
+  * High Education: There is a clear peak at younger ages (20-30), especially for women, indicating a higher concentration of young females in the high education group.
+
+## Aggregate across minutes to create a total activity variable for each participant
+
+```{r}
+activity <- merged_data |>
+  mutate(total_activity = rowSums(across(min1:min1440), na.rm = TRUE))
+```
+
+## Plot total activities (y-axis) against age (x-axis), comparing men to women, with separate panels for each education level
+
+```{r}
+act_age_plot <- activity |>
+  ggplot(aes(x = age, y = total_activity, color = sex)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(se = FALSE) +
+  facet_grid(.~ education) +
+  labs(
+    title = "Total Activity vs Age by Education Level and Sex",
+    x = "Age",
+    y = "Total Activity",
+    color = "Sex"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+print(act_age_plot)
+```
+
+Some comments:
+
+* In the "low education" group, physical activity tends to decrease with age for both men and women, with some fluctuations in later adulthood (50-60). Men and women exhibit similar trends, but there are noticeable individual variations.
+
+* In the "median education" group, women generally show higher total activity compared to men, especially in middle age (30-50). Activity levels for both sexes tend to decrease in older age.
+
+* In the "high education" group, the trends are relatively stable across age, with men and women showing similar activity patterns, though women tend to have higher activity level.
+
+## Plot 24-hour activity time courses for each education level, using color to indicate sex
+
+```{r}
+day_course_plot <- merged_data |>
+  pivot_longer(cols = min1:min1440, names_to = "minute", values_to = "activity") |>
+  mutate(minute = as.numeric(gsub("min", "", minute))) |>
+  group_by(education, sex, minute) |>
+  summarize(mean_activity = mean(activity, na.rm = TRUE)) |>
+  ggplot(aes(x = minute, y = mean_activity, color = sex)) +
+  geom_line() +
+  geom_smooth(se = FALSE) +
+  facet_grid(.~ education) +
+  labs(
+    title = "24-Hour Activity Time Courses by Education Level and Sex",
+    x = "Minute of the Day",
+    y = "Mean Activity",
+    color = "Sex"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+print(day_course_plot)
+
+```
+
+Some comments:
+
+* Low Education: Both men and women show distinct troughs in activity in the early morning (250 mins~4 a.m.) and peaks in the afternoon (750 mins~12:30 p.m.). After 12:30 p.m., both men and women keep decreasing until night.
+
+* Median Education: Both men and women show distinct troughs in activity in the early morning (250 mins~4 a.m.) and peaks in the afternoon (750 mins~12:30 p.m.). The peak will last until about (1125 mins~6:45 p.m.). After 6:45 p.m., both men and women keep decreasing until night.
+
+* High Education: The high education has the similar trend as the median education. However, women show a significant higher activity level than men during the peak time period.
