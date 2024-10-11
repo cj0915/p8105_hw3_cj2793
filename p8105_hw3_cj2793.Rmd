@@ -4,6 +4,117 @@ author: "Chenyu Jin"
 date: "2024-10-08"
 output: github_document
 ---
+# Problem 1
+
+## This problem uses the `NY NOAA` data
+
+```{r}
+library(p8105.datasets)
+library(tidyverse)
+
+data("ny_noaa")
+
+noaa_obs = nrow(ny_noaa)
+
+summary(ny_noaa)
+```
+
+Short description: This dataset contains `noaa_obs` weather observations, each identified by a unique station ID and date ranging from 1981 to 2010. Key variables include precipitation (`prcp`), snowfall (`snow`), and snow depth (`snwd`), along with maximum (`tmax`) and minimum (`tmin`) temperatures, though the temperature variables are recorded as characters. The dataset shows considerable missing data, with 145,838 missing values for precipitation, 381,221 for snowfall, and 591,786 for snow depth, indicating the need for careful handling of missing data in any analysis.
+
+## Convert date to Date type and create separate variables for year, month, and day
+
+```{r}
+ny_noaa <- ny_noaa |>
+  mutate(
+    date = as.Date(date, format = "%Y-%m-%d"),
+    year = lubridate::year(date),
+    month = lubridate::month(date),
+    day = lubridate::day(date)
+  )|>
+  mutate(
+    tmax = as.numeric(tmax) / 10,
+    tmin = as.numeric(tmin) / 10
+  )
+```
+
+
+# Examine the most commonly observed values for snowfall
+
+```{r}
+snowfall_counts <- ny_noaa |>
+  filter(!is.na(snow)) |>
+  count(snow) |>
+  arrange(desc(n))
+
+print(head(snowfall_counts, 1))
+```
+
+The most commonly observed values for snowfall are 0 mm, indicating that the majority of days in the data set did not have any snowfall. This is expected, as snowfall is generally a rare event, especially outside of winter months. 
+
+## Plot average max temperature in January and July across years for each station
+
+```{r average max temperature plot by station}
+avg_max_temp_plot <- ny_noaa |>
+  filter(month %in% c(1, 7)) |>
+  group_by(year, month, id) |>
+  summarize(avg_tmax = mean(tmax, na.rm = TRUE)) |>
+  mutate(month = ifelse(month == 1, "January", "July")) |>
+  ggplot(aes(x = year, y = avg_tmax, color = id)) +
+  geom_line() +
+  facet_grid(.~ month) +
+  labs(
+    title = "Average Maximum Temperature in January and July Across Years by Station",
+    x = "Year",
+    y = "Average Maximum Temperature (°C)",
+    color = "Station ID"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Display the plot
+print(avg_max_temp_plot)
+```
+
+## Create a two-panel plot
+
+## (i) tmax vs tmin for the full dataset using a hexbin plot
+```{r}
+hexbin_plot <- ny_noaa |>
+  ggplot(aes(x = tmin, y = tmax)) +
+  geom_hex(bins = 50) +
+  labs(
+    title = "Hexbin Plot of Tmax vs Tmin",
+    x = "Minimum Temperature (°C)",
+    y = "Maximum Temperature (°C)"
+  ) +
+  theme_minimal()
+
+```
+
+## (ii) Distribution of snowfall values greater than 0 and less than 100 by year
+
+```{r}
+snowfall_distribution_plot <- ny_noaa |>
+  filter(snow > 0 & snow < 100) |>
+  ggplot(aes(x = factor(year), y = snow)) +
+  geom_boxplot() +
+  labs(
+    title = "Distribution of Snowfall Values (> 0 and < 100 mm) by Year",
+    x = "Year",
+    y = "Snowfall (mm)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r two-panel plot}
+library(patchwork)
+combined_plot <- hexbin_plot / snowfall_distribution_plot
+
+print(combined_plot)
+```
+
+
 
 # Problem 2
 
@@ -31,9 +142,9 @@ nhanes_covar <- nhanes_covar |>
     age = as.numeric(age),
     bmi = as.numeric(bmi),
     education = factor(education, levels = c(1, 2, 3), 
-                       labels = c("low education", 
-                                  "median education", 
-                                  "high education"))
+                       labels = c("Less than high school", 
+                                  "High school equivalent", 
+                                  "More than high school"))
   ) |>
   filter(age >= 21) |>
   drop_na()
@@ -49,26 +160,24 @@ merged_data <- nhanes_accel |>
 ## Produce a reader-friendly table for the number of men and women in each education category
 
 ```{r}
-education <- merged_data |>
+merged_data |>
   group_by(education, sex) |>
   summarize(count = n()) |>
-  pivot_wider(names_from = sex, values_from = count)
-
-print(knitr::kable(education))
+  pivot_wider(names_from = sex, values_from = count) |>
+  knitr::kable()
 ```
 
 ## Create a visualization of the age distributions for men and women in each education category
 
-```{r}
+```{r age distributions}
 age_dist_plot <- merged_data |>
-  ggplot(aes(x = age, fill = sex)) +
-  geom_histogram(binwidth = 5, position = "dodge", alpha = 0.7) +
-  facet_grid(.~ education) +
+  ggplot(aes(x = education, y = age, fill = sex)) +
+  geom_boxplot(alpha = 0.7) +
   labs(
     title = "Age Distributions for Men and Women by Education Category",
-    x = "Age for men and women",
-    y = "Count for men and women",
-    color = "Sex"
+    x = "Education Category",
+    y = "Age",
+    fill = "Sex"
   ) +
   theme_minimal() +
   theme(legend.position = "bottom")
@@ -80,19 +189,19 @@ Some comments:
 
 * For the reader_friendly table:
 
-   * There is a roughly equal distribution between men and women for the "low education" group.
+   * There is a roughly equal distribution between men and women for the "Less than high school" group.
 
-   * For "median education," there are more men than women.
+   * For "High school equivalent", there are more men than women.
 
-   * In the "high education" group, the numbers of men and women are almost the same, with a slight excess of females.
+   * In the "More than high school" group, the numbers of men and women are almost the same, with a slight excess of females.
 
 * For the plot:
 
-  * Low Education: There is a relatively even distribution across age ranges for both men and women, with a slight concentration in older ages (60+).
+  * Less than high school: Both men and women have a median age around 60, with a roughly equal distribution.
 
-  * Median Education: The number of participants is lower, with men being slightly more represented, and the age range is spread quite evenly.
+  * High school equivalent: Men tend to have a lower median age of around 53, while the median age for women is over 60. The overall age of women is higher than men.
 
-  * High Education: There is a clear peak at younger ages (20-30), especially for women, indicating a higher concentration of young females in the high education group.
+  * More than high school: The median age for men is around 42, while women are slightly younger (around 41).with a roughly equal distribution.
 
 ## Aggregate across minutes to create a total activity variable for each participant
 
@@ -103,7 +212,7 @@ activity <- merged_data |>
 
 ## Plot total activities (y-axis) against age (x-axis), comparing men to women, with separate panels for each education level
 
-```{r}
+```{r total activities against age}
 act_age_plot <- activity |>
   ggplot(aes(x = age, y = total_activity, color = sex)) +
   geom_point(alpha = 0.6) +
@@ -123,22 +232,22 @@ print(act_age_plot)
 
 Some comments:
 
-* In the "low education" group, physical activity tends to decrease with age for both men and women, with some fluctuations in later adulthood (50-60). Men and women exhibit similar trends, but there are noticeable individual variations.
+* In the "Less than high school" group, physical activity tends to decrease with age for both men and women, with some fluctuations in later adulthood (50-60). Men and women exhibit similar trends, but there are noticeable individual variations.
 
-* In the "median education" group, women generally show higher total activity compared to men, especially in middle age (30-50). Activity levels for both sexes tend to decrease in older age.
+* In the "High school equivalent" group, women generally show higher total activity compared to men, especially in middle age (30-50). Activity levels for both sexes tend to decrease after 40 years old but increase before 40 years old.
 
-* In the "high education" group, the trends are relatively stable across age, with men and women showing similar activity patterns, though women tend to have higher activity level.
+* In the "More than high school" group, the trends are relatively stable across age, with men and women showing similar activity patterns, though women tend to have higher activity level. Activity levels for both sexes tend to decrease after 60 years old.
 
 ## Plot 24-hour activity time courses for each education level, using color to indicate sex
 
-```{r}
+```{r 24-hour activity time courses}
 day_course_plot <- merged_data |>
   pivot_longer(cols = min1:min1440, names_to = "minute", values_to = "activity") |>
   mutate(minute = as.numeric(gsub("min", "", minute))) |>
   group_by(education, sex, minute) |>
   summarize(mean_activity = mean(activity, na.rm = TRUE)) |>
   ggplot(aes(x = minute, y = mean_activity, color = sex)) +
-  geom_line() +
+  geom_line(alpha = 0.5) +
   geom_smooth(se = FALSE) +
   facet_grid(.~ education) +
   labs(
@@ -156,11 +265,11 @@ print(day_course_plot)
 
 Some comments:
 
-* Low Education: Both men and women show distinct troughs in activity in the early morning (250 mins~4 a.m.) and peaks in the afternoon (750 mins~12:30 p.m.). After 12:30 p.m., both men and women keep decreasing until night.
+* Less than high school: Both men and women show distinct troughs in activity in the early morning (250 mins~4 a.m.) and peaks in the afternoon (750 mins~12:30 p.m.). After 12:30 p.m., both men and women keep decreasing until night.
 
-* Median Education: Both men and women show distinct troughs in activity in the early morning (250 mins~4 a.m.) and peaks in the afternoon (750 mins~12:30 p.m.). The peak will last until about (1125 mins~6:45 p.m.). After 6:45 p.m., both men and women keep decreasing until night.
+* High school equivalent: Both men and women show distinct troughs in activity in the early morning (250 mins~4 a.m.) and peaks in the afternoon (750 mins~12:30 p.m.). The peak will last until about (1125 mins~6:45 p.m.). After 6:45 p.m., both men and women keep decreasing until night.
 
-* High Education: The high education has the similar trend as the median education. However, women show a significant higher activity level than men during the peak time period.
+* More than high school: The high education has the similar trend as the median education. However, women show a significant higher activity level than men during the peak time period.
 
 # Problem 3
 
@@ -195,12 +304,11 @@ Description: The cleaned Citi Bike data set contains `r obs` observations as wel
 ## Produce a reader-friendly table
 
 ```{r}
-rides_summary <- combined_data |>
+combined_data |>
   group_by(year, month, member_casual) |>
   summarize(total_rides = n()) |>
-  pivot_wider(names_from = member_casual, values_from = total_rides)
-
-print(knitr::kable(rides_summary))
+  pivot_wider(names_from = member_casual, values_from = total_rides) |> 
+  knitr::kable()
 ```
 
 Some comments: The summary table shows the total number of rides taken by casual riders and Citi Bike members across different years and months. From the table, it is evident that there is a general trend of higher ridership in July compared to January, which can be attributed to better weather conditions during summer months. Additionally, Citi Bike members consistently take more rides than casual riders across all time periods, highlighting the benefit of membership for frequent users. Notably, the number of casual riders has increased from 2020 to 2024.
@@ -208,20 +316,21 @@ Some comments: The summary table shows the total number of rides taken by casual
 ## Create a table showing the 5 most popular starting stations for July 2024
 
 ```{r}
-popular_stations <- combined_data |>
+combined_data |>
   filter(year == 2024, month == "jul") |>
   group_by(start_station_name) |>
   summarize(total_rides = n()) |>
   arrange(desc(total_rides)) |>
-  slice_head(n = 5)
-
-print(knitr::kable(popular_stations))
+  slice_head(n = 5) |>
+  knitr::kable()
 ```
 
 ## The effects of day of the week, month, and year on median ride duration
 
-```{r}
+```{r median ride duration}
 median_ride_plot <- combined_data |>
+  mutate(weekdays = factor(weekdays, 
+                           levels = c("Monday", "Tuesday", "Wednesday", "Thursday",                                              "Friday", "Saturday", "Sunday"))) |>
   group_by(year, month, weekdays) |>
   summarize(median_ride = median(duration, na.rm = TRUE)) |>
   ggplot(aes(x = weekdays, y = median_ride, color = interaction(year, month))) +
@@ -248,7 +357,9 @@ Some comments:
 
 * Ride duration tends to be longer on weekends.
 
-```{r}
+## Impact of month, membership status, and bike type on the distribution of ride duration
+
+```{r distribution of ride duration}
 ride_distribution_plot <- combined_data |>
   filter(year == 2024) |>
   ggplot(aes(x = duration, fill = member_casual)) +
