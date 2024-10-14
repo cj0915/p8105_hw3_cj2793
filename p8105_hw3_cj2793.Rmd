@@ -8,7 +8,7 @@ output: github_document
 
 ## This problem uses the `NY NOAA` data
 
-```{r}
+```{r message = FALSE}
 library(p8105.datasets)
 library(tidyverse)
 
@@ -32,11 +32,10 @@ ny_noaa <- ny_noaa |>
     day = lubridate::day(date)
   )|>
   mutate(
-    tmax = as.numeric(tmax) / 10,
-    tmin = as.numeric(tmin) / 10
+    tmax = as.numeric(tmax),
+    tmin = as.numeric(tmin)
   )
 ```
-
 
 # Examine the most commonly observed values for snowfall
 
@@ -75,6 +74,8 @@ avg_max_temp_plot <- ny_noaa |>
 print(avg_max_temp_plot)
 ```
 
+The mean temperature in January is much lower than the mean temperature in July for all stations and across all years. We see one extremely cold station in July of 1980s, as well as a few other less extreme outliers.
+
 ## Create a two-panel plot
 
 ## (i) tmax vs tmin for the full dataset using a hexbin plot
@@ -94,10 +95,12 @@ hexbin_plot <- ny_noaa |>
 ## (ii) Distribution of snowfall values greater than 0 and less than 100 by year
 
 ```{r}
+library(ggridges)
+
 snowfall_distribution_plot <- ny_noaa |>
   filter(snow > 0 & snow < 100) |>
-  ggplot(aes(x = factor(year), y = snow)) +
-  geom_boxplot() +
+  ggplot(aes(x = snow, y = factor(year))) +
+  geom_density_ridges() +
   labs(
     title = "Distribution of Snowfall Values (> 0 and < 100 mm) by Year",
     x = "Year",
@@ -109,22 +112,28 @@ snowfall_distribution_plot <- ny_noaa |>
 
 ```{r two-panel plot}
 library(patchwork)
-combined_plot <- hexbin_plot / snowfall_distribution_plot
+
+combined_plot <- hexbin_plot + snowfall_distribution_plot
 
 print(combined_plot)
 ```
 
+From the hex plot we see that while there is some variability, the majority of the data cluster tightly in the center of the distribution.
 
+From the ridge plot, we see a multimodal density of snowfall within a given year. Most stations see between 0 and  35 mm of snow in a year. Then there is a another group of stations that see about 45 mm of snow, and another group that sees nearly 80 mm.
 
 # Problem 2
 
 ## Imort data sets
 
-```{r}
+```{r message = FALSE}
 library(tidyverse)
 
 nhanes_accel <- read_csv("hw3data/nhanes_accel.csv") |>
-  janitor::clean_names()
+  janitor::clean_names() |>
+  pivot_longer(cols = min1:min1440, names_to = "minute", values_to = "mims") |>
+  mutate(minute = as.numeric(gsub("min", "", minute)))
+  
 nhanes_covar <- read_csv("hw3data/nhanes_covar.csv", skip = 4)
 colnames(nhanes_covar) <- c("seqn", "sex", "age", "bmi", "education")
 ```
@@ -132,7 +141,7 @@ colnames(nhanes_covar) <- c("seqn", "sex", "age", "bmi", "education")
 ## Encode data with reasonable variable classes; Filter out participants less than 21 years of age and those with missing demographic data in `nhanes_covar`data set
 
 Here we assume for `sex`, "1" is Male and "2" is female;
-And we assume for `education`, "1" is low, "2" is median and "3" is high
+And we assume for `education`, "1" is Less than high school, "2" is High school equivalent and "3" is More than high school
 
 ```{r}
 nhanes_covar <- nhanes_covar |>
@@ -160,23 +169,23 @@ merged_data <- nhanes_accel |>
 ## Produce a reader-friendly table for the number of men and women in each education category
 
 ```{r}
-merged_data |>
-  group_by(education, sex) |>
-  summarize(count = n()) |>
-  pivot_wider(names_from = sex, values_from = count) |>
+nhanes_covar |>
+  count(sex, education) |>
+  pivot_wider(names_from = sex, values_from = n) |>
   knitr::kable()
 ```
 
 ## Create a visualization of the age distributions for men and women in each education category
 
 ```{r age distributions}
-age_dist_plot <- merged_data |>
-  ggplot(aes(x = education, y = age, fill = sex)) +
-  geom_boxplot(alpha = 0.7) +
+age_dist_plot <- nhanes_covar |>
+  ggplot(aes(x = age, fill = sex)) +
+  geom_density(alpha = 0.3) +
+  facet_grid(.~ education) +
   labs(
     title = "Age Distributions for Men and Women by Education Category",
-    x = "Education Category",
-    y = "Age",
+    x = "Age",
+    y = "Density",
     fill = "Sex"
   ) +
   theme_minimal() +
@@ -199,21 +208,16 @@ Some comments:
 
   * Less than high school: Both men and women have a median age around 60, with a roughly equal distribution.
 
-  * High school equivalent: Men tend to have a lower median age of around 53, while the median age for women is over 60. The overall age of women is higher than men.
+  * High school equivalent: Men tend to have a lower median age of around 53, while the median age for women is over 60.
 
-  * More than high school: The median age for men is around 42, while women are slightly younger (around 41).with a roughly equal distribution.
-
-## Aggregate across minutes to create a total activity variable for each participant
-
-```{r}
-activity <- merged_data |>
-  mutate(total_activity = rowSums(across(min1:min1440), na.rm = TRUE))
-```
+  * More than high school: The median age for men is around 42, while women are slightly younger (around 41). For 20-40 age group, women have a significantly greater density than men.
 
 ## Plot total activities (y-axis) against age (x-axis), comparing men to women, with separate panels for each education level
 
 ```{r total activities against age}
-act_age_plot <- activity |>
+act_age_plot <- merged_data |>
+  group_by(seqn, age, education, sex) |>
+  summarize(total_activity = sum(mims)) |>
   ggplot(aes(x = age, y = total_activity, color = sex)) +
   geom_point(alpha = 0.6) +
   geom_smooth(se = FALSE) +
@@ -242,13 +246,9 @@ Some comments:
 
 ```{r 24-hour activity time courses}
 day_course_plot <- merged_data |>
-  pivot_longer(cols = min1:min1440, names_to = "minute", values_to = "activity") |>
-  mutate(minute = as.numeric(gsub("min", "", minute))) |>
-  group_by(education, sex, minute) |>
-  summarize(mean_activity = mean(activity, na.rm = TRUE)) |>
-  ggplot(aes(x = minute, y = mean_activity, color = sex)) +
+  ggplot(aes(x = minute, y = mims, group = seqn, color = sex)) +
   geom_line(alpha = 0.5) +
-  geom_smooth(se = FALSE) +
+  geom_smooth(aes(group = sex), se = FALSE) +
   facet_grid(.~ education) +
   labs(
     title = "24-Hour Activity Time Courses by Education Level and Sex",
@@ -269,13 +269,13 @@ Some comments:
 
 * High school equivalent: Both men and women show distinct troughs in activity in the early morning (250 mins~4 a.m.) and peaks in the afternoon (750 mins~12:30 p.m.). The peak will last until about (1125 mins~6:45 p.m.). After 6:45 p.m., both men and women keep decreasing until night.
 
-* More than high school: The high education has the similar trend as the median education. However, women show a significant higher activity level than men during the peak time period.
+* More than high school: The high education has the similar trend as the median education. However, women show a higher activity level than men during the peak time period. Both male and female show some significant outliers.
 
 # Problem 3
 
 ## Import, clean, and tidy these data, and describe the resulting dataset.
 
-```{r}
+```{r message = FALSE}
 library(tidyverse)
 
 jan_2020 <- read_csv("hw3data/Jan 2020 Citi.csv") |>
@@ -325,6 +325,8 @@ combined_data |>
   knitr::kable()
 ```
 
+From the summary table, Pier 61 at Chelsea Piers, University Pl & E 14 St, W 21 St & 6 Ave, West St & Chambers St, W 31 St & 7 Ave are the 5 most popular starting stations for July 2024.
+
 ## The effects of day of the week, month, and year on median ride duration
 
 ```{r median ride duration}
@@ -362,9 +364,9 @@ Some comments:
 ```{r distribution of ride duration}
 ride_distribution_plot <- combined_data |>
   filter(year == 2024) |>
-  ggplot(aes(x = duration, fill = member_casual)) +
-  geom_histogram(binwidth = 10, position = "dodge", alpha = 0.6) +
-  facet_grid(month ~ rideable_type) +
+  ggplot(aes(x = rideable_type, y = duration)) +
+  geom_violin() +
+  facet_grid(member_casual ~ month) +
   labs(
     title = "Ride Duration Distribution by Month, Membership Status, and Bike Type (2024)",
     x = "Ride Duration (minutes)",
